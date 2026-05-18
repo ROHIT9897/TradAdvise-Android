@@ -132,3 +132,22 @@ data class HorizonPredictionResponse(
     @SerializedName("reasoning")      val reasoning:    List<String>,
     @SerializedName("risk_level")     val riskLevel:    String
 )
+
+data class TargetPredictionResponse(
+    @SerializedName("ticker")          val ticker:        String,
+    @SerializedName("strategy")        val strategy:      String,
+    @SerializedName("current_price")   val currentPrice:  Double,
+    @SerializedName("target_price")    val targetPrice:   Double,
+    @SerializedName("required_return") val requiredReturn: Double,
+    @SerializedName("expected_days")   val expectedDays:  Int,
+    @SerializedName("best_case_days")  val bestCaseDays:  Int,
+    @SerializedName("worst_case_days") val worstCaseDays: Int,
+    @SerializedName("expected_date")   val expectedDate:  String,
+    @SerializedName("best_date")       val bestDate:      String,
+    @SerializedName("worst_date")      val worstDate:     String,
+    @SerializedName("probability")     val probability:   Int,
+    @SerializedName("risk_level")      val riskLevel:     String,
+    @SerializedName("notify_at_price") val notifyAtPrice: Double,
+    @SerializedName("notify_pct")      val notifyPct:     Int,
+    @SerializedName("reasoning")       val reasoning:     List<String>
+)

@@ -54,4 +54,13 @@ class StockRepository {
     ): ApiResult<HorizonPredictionResponse> = safeCall {
         api.getHorizonPrediction(ticker, days, strategy)
     }
+
+    suspend fun getTargetPrediction(
+        ticker:      String,
+        targetPrice: Double,
+        strategy:    String
+    ): ApiResult<TargetPredictionResponse> = safeCall {
+        api.getTargetPrediction(ticker, targetPrice, strategy)
+    }
+
 }

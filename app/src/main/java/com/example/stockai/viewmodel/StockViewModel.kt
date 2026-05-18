@@ -54,6 +54,11 @@ class StockViewModel : ViewModel() {
         MutableStateFlow<List<Pair<String, String>>>(emptyList())
     val suggestions: StateFlow<List<Pair<String, String>>> = _suggestions
 
+    private val _targetPrediction =
+        MutableStateFlow<ApiResult<TargetPredictionResponse>?>(null)
+    val targetPrediction: StateFlow<ApiResult<TargetPredictionResponse>?> =
+        _targetPrediction
+
     // ── Local cache ───────────────────────────────────────
     private val localCache =
         mutableMapOf<String,
@@ -103,6 +108,19 @@ class StockViewModel : ViewModel() {
                     (chart as? ApiResult.Success)?.data
                 )
             }
+        }
+    }
+
+    suspend fun fetchLivePriceForHorizon(
+        ticker: String
+    ): Pair<Double, Double>? {
+        return try {
+            val result = repository.getLivePrice(ticker)
+            if (result is ApiResult.Success) {
+                Pair(result.data.price, result.data.changePct)
+            } else null
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -181,6 +199,15 @@ class StockViewModel : ViewModel() {
         val results: List<NseStock> = NseStocks.search(query, limit = 8)
         _suggestions.value = results.map { stock: NseStock ->
             stock.ticker to stock.name
+        }
+    }
+
+    fun getTargetPrediction(ticker: String, targetPrice: Double, strategy: String) {
+        viewModelScope.launch {
+            _targetPrediction.value = ApiResult.Loading()
+            _targetPrediction.value = repository.getTargetPrediction(
+                ticker, targetPrice, strategy
+            )
         }
     }
 

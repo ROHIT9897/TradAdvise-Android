@@ -51,4 +51,11 @@ interface StockApiService {
         @Query("strategy") strategy: String = "hold"
     ): Response<HorizonPredictionResponse>    // ← Response<> wrapper add karo
 
+    @GET("api/v1/target/{ticker}")
+    suspend fun getTargetPrediction(
+        @Path("ticker")       ticker:      String,
+        @Query("target_price") targetPrice: Double,
+        @Query("strategy")    strategy:    String = "hold"
+    ): Response<TargetPredictionResponse>
+
 }
