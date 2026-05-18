@@ -1,6 +1,7 @@
 // ui/screens/MainScreen.kt
 package com.example.stockai.ui.screens
 
+import androidx.compose.runtime.MutableState
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -55,7 +56,7 @@ fun signalBg(signal: String) = when (signal) {
 @OptIn(ExperimentalMaterial3Api::class)
 
 @Composable
-fun MainScreen(viewModel: StockViewModel) {
+fun MainScreen(viewModel: StockViewModel, selectedTab: MutableState<Int>) {
     val prediction     by viewModel.prediction.collectAsState()
     val livePrice      by viewModel.livePrice.collectAsState()
     val movers         by viewModel.movers.collectAsState()
@@ -67,69 +68,255 @@ fun MainScreen(viewModel: StockViewModel) {
     val watchlist      by viewModel.watchlist.collectAsState()
 
     var searchText  by remember { mutableStateOf("") }
-    var selectedTab by remember { mutableIntStateOf(0) }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BgDeep)
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        modifier = Modifier.fillMaxSize()) {
 
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BgDeep)
+        ) {
             TopBar(
-                ticker       = currentTicker,
-                onRefresh    = { viewModel.refresh() },
+                ticker = currentTicker,
+                onRefresh = { viewModel.refresh() },
                 isRefreshing = isRefreshing
             )
 
             SearchBarRow(
-                value             = searchText,
-                onChange          = {
+                value = searchText,
+                onChange = {
                     searchText = it.uppercase()
                     viewModel.updateSuggestions(it)
                 },
-                onSearch          = {
+                onSearch = {
                     if (searchText.isNotBlank()) {
                         viewModel.analyzeStock(searchText)
                         searchText = ""
-                        selectedTab = 0        // ← switch to Overview on search
+                        selectedTab.value = 0        // ← switch to Overview on search
                     }
                 },
-                suggestions       = suggestions,
+                suggestions = suggestions,
                 onSuggestionClick = {
                     viewModel.analyzeStock(it)
-                    searchText  = ""
-                    selectedTab = 0            // ← switch to Overview on suggestion tap
+                    searchText = ""
+                    selectedTab.value = 0            // ← switch to Overview on suggestion tap
                 }
             )
 
             StockTabBar(
-                selected = selectedTab,
-                onSelect = { selectedTab = it }
+                selected = selectedTab.value,
+                onSelect = { selectedTab.value = it }
             )
 
-            when (selectedTab) {
+            when (selectedTab.value) {
                 0 -> OverviewTab(
-                    prediction     = prediction,
-                    livePrice      = livePrice,
-                    chartData      = chartData,
+                    prediction = prediction,
+                    livePrice = livePrice,
+                    chartData = chartData,
                     selectedPeriod = selectedPeriod,
                     onPeriodChange = { period ->
                         viewModel.loadChartData(currentTicker, period)
                     }
                 )
+
                 1 -> IndicatorsTab(prediction)
                 2 -> NewsTab(prediction)
                 3 -> MoversTab(
-                    movers    = movers,
+                    movers = movers,
                     watchlist = watchlist,
                     viewModel = viewModel,
-                    onAnalyze = { selectedTab = 0 }  // ← ADD THIS
+                    onAnalyze = { selectedTab.value = 0 }
+                )
+
+                4 -> HorizonScreen(
+                    ticker = currentTicker,
+                    viewModel = viewModel
                 )
             }
         }
+        if (selectedTab.value != 3) {
+            WatchlistFab(
+                watchlistCount = watchlist.size,
+                currentTicker  = currentTicker,
+                isInWatchlist  = watchlist.contains(currentTicker),
+                onAddRemove    = {
+                    if (watchlist.contains(currentTicker)) {
+                        viewModel.removeFromWatchlist(currentTicker)
+                    } else {
+                        viewModel.addToWatchlist(currentTicker)
+                    }
+                },
+                onOpenWatchlist = {
+                    selectedTab.value = 3  // Go to Market tab
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 20.dp)
+            )
+        }
     }
-}// ── Top bar ──────────────────────────────────────────────
+}
+// ── Top bar ──────────────────────────────────────────────
+
+@Composable
+fun WatchlistFab(
+    watchlistCount:  Int,
+    currentTicker:   String,
+    isInWatchlist:   Boolean,
+    onAddRemove:     () -> Unit,
+    onOpenWatchlist: () -> Unit,
+    modifier:        Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(
+        modifier            = modifier,
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+
+        // ── Mini action buttons (appear when expanded) ─────
+        if (expanded) {
+
+            // Add/Remove current stock
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End
+            ) {
+                // Label
+                Surface(
+                    shape  = RoundedCornerShape(8.dp),
+                    color  = BgCard,
+                    border = BorderStroke(1.dp, Color(0xFF1A2535))
+                ) {
+                    Text(
+                        if (isInWatchlist) "Remove $currentTicker"
+                        else "Add $currentTicker",
+                        color    = if (isInWatchlist) AccentRed else AccentGreen,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(
+                            horizontal = 10.dp,
+                            vertical   = 6.dp
+                        )
+                    )
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                // Mini circle button
+                Box(
+                    modifier        = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isInWatchlist)
+                                AccentRed.copy(alpha = 0.15f)
+                            else
+                                AccentGreen.copy(alpha = 0.15f)
+                        )
+                        .border(
+                            1.dp,
+                            if (isInWatchlist) AccentRed.copy(alpha = 0.5f)
+                            else AccentGreen.copy(alpha = 0.5f),
+                            CircleShape
+                        )
+                        .clickable {
+                            onAddRemove()
+                            expanded = false
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (isInWatchlist) "✕" else "+",
+                        color      = if (isInWatchlist) AccentRed else AccentGreen,
+                        fontSize   = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Open watchlist
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End
+            ) {
+                Surface(
+                    shape  = RoundedCornerShape(8.dp),
+                    color  = BgCard,
+                    border = BorderStroke(1.dp, Color(0xFF1A2535))
+                ) {
+                    Text(
+                        "View Watchlist ($watchlistCount)",
+                        color    = AccentBlue,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(
+                            horizontal = 10.dp,
+                            vertical   = 6.dp
+                        )
+                    )
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                Box(
+                    modifier        = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(AccentBlue.copy(alpha = 0.15f))
+                        .border(
+                            1.dp,
+                            AccentBlue.copy(alpha = 0.5f),
+                            CircleShape
+                        )
+                        .clickable {
+                            onOpenWatchlist()
+                            expanded = false
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("★", color = AccentBlue, fontSize = 16.sp)
+                }
+            }
+        }
+
+        // ── Main transparent FAB ───────────────────────────
+        Box(
+            modifier        = Modifier
+                .size(54.dp)
+                .clip(CircleShape)
+                .background(BgCard.copy(alpha = 0.85f))
+                .border(
+                    1.5.dp,
+                    if (isInWatchlist)
+                        AccentGreen.copy(alpha = 0.6f)
+                    else
+                        AccentBlue.copy(alpha = 0.4f),
+                    CircleShape
+                )
+                .clickable { expanded = !expanded },
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    if (isInWatchlist) "★" else "☆",
+                    color    = if (isInWatchlist) AccentGreen else AccentBlue,
+                    fontSize = 20.sp
+                )
+                if (watchlistCount > 0) {
+                    Text(
+                        watchlistCount.toString(),
+                        color    = TextMuted,
+                        fontSize = 9.sp
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun TopBar(ticker: String, onRefresh: () -> Unit, isRefreshing: Boolean) {
@@ -292,37 +479,32 @@ fun SearchBarRow(
 
 @Composable
 fun StockTabBar(selected: Int, onSelect: (Int) -> Unit) {
-    val tabs = listOf("Overview", "Indicators", "News", "Market")
 
-    TabRow(
-        selectedTabIndex = selected,
-        modifier         = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(12.dp)),
+    val tabs = listOf(
+        "Overview", "Indicators", "News", "Market", "Horizon"
+    )
+
+    ScrollableTabRow(
+        selectedTabIndex = selected,           // ← selectedTab.value nahi
         containerColor   = BgCard,
-        contentColor     = TextPrimary,
-        indicator        = { tabPositions ->
-            Box(
-                modifier = Modifier
-                    .tabIndicatorOffset(tabPositions[selected])
-                    .fillMaxHeight()
-                    .padding(2.dp)
-                    .background(AccentBlue.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
-            )
-        },
-        divider = {}
+        contentColor     = AccentBlue,
+        edgePadding      = 0.dp
     ) {
         tabs.forEachIndexed { index, title ->
             Tab(
-                selected    = selected == index,
-                onClick     = { onSelect(index) },
-                modifier    = Modifier.height(40.dp),
-                selectedContentColor   = AccentBlue,
-                unselectedContentColor = TextSecondary
-            ) {
-                Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            }
+                selected = selected == index,          // ← selected
+                onClick  = { onSelect(index) },        // ← onSelect
+                text     = {
+                    Text(
+                        title,
+                        fontSize   = 11.sp,
+                        fontWeight = if (selected == index)
+                            FontWeight.Bold
+                        else FontWeight.Normal,
+                        maxLines   = 1
+                    )
+                }
+            )
         }
     }
 }
@@ -1628,7 +1810,68 @@ fun AddToWatchlistRow(onAdd: (String) -> Unit) {
     }
 }
 
+@Composable
+fun WatchlistItem(
+    ticker:    String,
+    isPremium: Boolean,
+    onClick:   () -> Unit,
+    onRemove:  () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape  = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = BgCard),
+        border = BorderStroke(1.dp, Color(0xFF1A2535))
+    ) {
+        Row(
+            modifier          = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // ── Transparent circle with initials ──────────
+            Box(
+                modifier        = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(
+                        AccentBlue.copy(alpha = 0.15f)  // transparent
+                    )
+                    .border(
+                        1.dp,
+                        AccentBlue.copy(alpha = 0.3f),
+                        CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text       = ticker.take(2),
+                    color      = AccentBlue,
+                    fontSize   = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
 
+            Spacer(Modifier.width(12.dp))
+
+            // ── Ticker name ───────────────────────────────
+            Text(
+                ticker,
+                color      = TextPrimary,
+                fontSize   = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier   = Modifier.weight(1f)
+            )
+
+            // ── Remove button ─────────────────────────────
+            IconButton(onClick = onRemove) {
+                Text("✕", color = TextMuted, fontSize = 14.sp)
+            }
+        }
+    }
+}
 // Update MoverCard to show watchlist add/remove button
 @Composable
 fun MoverCard(

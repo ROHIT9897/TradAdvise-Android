@@ -46,4 +46,12 @@ class StockRepository {
             ApiResult.Error(e.localizedMessage ?: "Unknown error")
         }
     }
+
+    suspend fun getHorizonPrediction(
+        ticker:   String,
+        days:     Int,
+        strategy: String
+    ): ApiResult<HorizonPredictionResponse> = safeCall {
+        api.getHorizonPrediction(ticker, days, strategy)
+    }
 }

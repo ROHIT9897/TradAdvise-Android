@@ -44,4 +44,11 @@ interface StockApiService {
         @Query("period") period: String = "1M"
     ): Response<ChartResponse>
 
+    @GET("api/v1/predict/{ticker}")
+    suspend fun getHorizonPrediction(
+        @Path("ticker")    ticker:   String,
+        @Query("days")     days:     Int,
+        @Query("strategy") strategy: String = "hold"
+    ): Response<HorizonPredictionResponse>    // ← Response<> wrapper add karo
+
 }

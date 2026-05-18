@@ -2,10 +2,13 @@ package com.example.stockai.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.stockai.data.NseStock
+import com.example.stockai.data.NseStocks
 import com.example.stockai.data.models.*
 import com.example.stockai.data.repository.ApiResult
 import com.example.stockai.data.repository.StockRepository
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -14,24 +17,30 @@ class StockViewModel : ViewModel() {
 
     private val repository = StockRepository()
 
+    // ── API results ───────────────────────────────────────
     private val _prediction = MutableStateFlow<ApiResult<PredictionResponse>?>(null)
     val prediction: StateFlow<ApiResult<PredictionResponse>?> = _prediction
 
     private val _livePrice = MutableStateFlow<ApiResult<LivePriceResponse>?>(null)
     val livePrice: StateFlow<ApiResult<LivePriceResponse>?> = _livePrice
 
-    private val _movers = MutableStateFlow<ApiResult<MoversResponse>?>(null)
-    val movers: StateFlow<ApiResult<MoversResponse>?> = _movers
-
-    // ── Chart data — was missing ──────────────────────────
     private val _chartData = MutableStateFlow<ApiResult<ChartResponse>?>(null)
     val chartData: StateFlow<ApiResult<ChartResponse>?> = _chartData
 
-    private val _selectedPeriod = MutableStateFlow("1M")
-    val selectedPeriod: StateFlow<String> = _selectedPeriod
+    private val _movers = MutableStateFlow<ApiResult<MoversResponse>?>(null)
+    val movers: StateFlow<ApiResult<MoversResponse>?> = _movers
 
+    private val _horizonPrediction =
+        MutableStateFlow<ApiResult<HorizonPredictionResponse>?>(null)
+    val horizonPrediction: StateFlow<ApiResult<HorizonPredictionResponse>?> =
+        _horizonPrediction
+
+    // ── App state ─────────────────────────────────────────
     private val _currentTicker = MutableStateFlow("RELIANCE")
     val currentTicker: StateFlow<String> = _currentTicker
+
+    private val _selectedPeriod = MutableStateFlow("1M")
+    val selectedPeriod: StateFlow<String> = _selectedPeriod
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing
@@ -41,8 +50,14 @@ class StockViewModel : ViewModel() {
     )
     val watchlist: StateFlow<Set<String>> = _watchlist
 
-    private val _suggestions = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+    private val _suggestions =
+        MutableStateFlow<List<Pair<String, String>>>(emptyList())
     val suggestions: StateFlow<List<Pair<String, String>>> = _suggestions
+
+    // ── Local cache ───────────────────────────────────────
+    private val localCache =
+        mutableMapOf<String,
+                Triple<PredictionResponse, LivePriceResponse, ChartResponse?>>()
 
     // ── Analyze stock ─────────────────────────────────────
     fun analyzeStock(ticker: String) {
@@ -51,21 +66,47 @@ class StockViewModel : ViewModel() {
         _suggestions.value   = emptyList()
 
         viewModelScope.launch {
-            _prediction.value = ApiResult.Loading()
-            _livePrice.value  = ApiResult.Loading()
-            _chartData.value  = ApiResult.Loading()
+            // Show cached result instantly if available
+            val cached = localCache[clean]
+            if (cached != null) {
+                _prediction.value = ApiResult.Success(cached.first)
+                _livePrice.value  = ApiResult.Success(cached.second)
+                if (cached.third != null) {
+                    _chartData.value = ApiResult.Success(cached.third!!)
+                }
+            } else {
+                _prediction.value = ApiResult.Loading()
+                _livePrice.value  = ApiResult.Loading()
+                _chartData.value  = ApiResult.Loading()
+            }
 
+            // Fetch fresh in parallel
             val predJob  = async { repository.getPrediction(clean) }
             val priceJob = async { repository.getLivePrice(clean) }
-            val chartJob = async { repository.getChartData(clean, _selectedPeriod.value) }
+            val chartJob = async {
+                repository.getChartData(clean, _selectedPeriod.value)
+            }
 
-            _prediction.value = predJob.await()
-            _livePrice.value  = priceJob.await()
-            _chartData.value  = chartJob.await()
+            val pred  = predJob.await()
+            val price = priceJob.await()
+            val chart = chartJob.await()
+
+            _prediction.value = pred
+            _livePrice.value  = price
+            _chartData.value  = chart
+
+            // Save to local cache
+            if (pred is ApiResult.Success && price is ApiResult.Success) {
+                localCache[clean] = Triple(
+                    pred.data,
+                    price.data,
+                    (chart as? ApiResult.Success)?.data
+                )
+            }
         }
     }
 
-    // ── Load chart for specific period ────────────────────
+    // ── Chart period change ───────────────────────────────
     fun loadChartData(ticker: String, period: String) {
         _selectedPeriod.value = period
         viewModelScope.launch {
@@ -89,7 +130,9 @@ class StockViewModel : ViewModel() {
 
             val predJob   = async { repository.getPrediction(_currentTicker.value) }
             val priceJob  = async { repository.getLivePrice(_currentTicker.value) }
-            val chartJob  = async { repository.getChartData(_currentTicker.value, _selectedPeriod.value) }
+            val chartJob  = async {
+                repository.getChartData(_currentTicker.value, _selectedPeriod.value)
+            }
             val moversJob = async { repository.getMarketMovers() }
 
             _prediction.value   = predJob.await()
@@ -98,6 +141,23 @@ class StockViewModel : ViewModel() {
             _movers.value       = moversJob.await()
             _isRefreshing.value = false
         }
+    }
+
+    // ── Horizon prediction ────────────────────────────────
+    fun getHorizonPrediction(ticker: String, days: Int, strategy: String) {
+        viewModelScope.launch {
+            _horizonPrediction.value = ApiResult.Loading()
+            _horizonPrediction.value =
+                repository.getHorizonPrediction(ticker, days, strategy)
+        }
+    }
+
+    fun scheduleHorizonAlert(
+        prediction: HorizonPredictionResponse,
+        context:    android.content.Context
+    ) {
+        com.example.stockai.utils.AlertScheduler
+            .scheduleAlert(context, prediction)
     }
 
     // ── Watchlist ─────────────────────────────────────────
@@ -112,70 +172,50 @@ class StockViewModel : ViewModel() {
     fun isInWatchlist(ticker: String): Boolean =
         _watchlist.value.contains(ticker.uppercase())
 
-    // ── Search suggestions ────────────────────────────────
+    // ── Search — uses NseStocks master file ───────────────
     fun updateSuggestions(query: String) {
         if (query.isBlank()) {
             _suggestions.value = emptyList()
             return
         }
-        val q = query.uppercase()
-        _suggestions.value = ALL_STOCKS
-            .filter { (ticker, name) ->
-                ticker.startsWith(q) || name.uppercase().contains(q)
-            }
-            .take(6)
+        val results: List<NseStock> = NseStocks.search(query, limit = 8)
+        _suggestions.value = results.map { stock: NseStock ->
+            stock.ticker to stock.name
+        }
     }
 
+    // ── Paywall ───────────────────────────────────────────
+    private val _showPaywall = MutableStateFlow(false)
+    val showPaywall: StateFlow<Boolean> = _showPaywall
+
+    fun showPaywall()  { _showPaywall.value = true  }
+    fun hidePaywall()  { _showPaywall.value = false }
+    fun checkPremiumStatus() {}
+
+    // ── Init ──────────────────────────────────────────────
     init {
         analyzeStock("RELIANCE")
         loadMarketMovers()
+
+        // Pre-fetch top stocks silently
+        viewModelScope.launch {
+            delay(5000)
+            listOf("TCS", "INFY", "HDFCBANK").forEach { ticker ->
+                try {
+                    val pred  = repository.getPrediction(ticker)
+                    val price = repository.getLivePrice(ticker)
+                    val chart = repository.getChartData(ticker, "1M")
+                    if (pred  is ApiResult.Success &&
+                        price is ApiResult.Success) {
+                        localCache[ticker] = Triple(
+                            pred.data,
+                            price.data,
+                            (chart as? ApiResult.Success)?.data
+                        )
+                    }
+                } catch (_: Exception) {}
+                delay(2000)
+            }
+        }
     }
 }
-
-// ── Stock universe for search suggestions ─────────────────
-val ALL_STOCKS = listOf(
-    "RELIANCE"   to "Reliance Industries",
-    "TCS"        to "Tata Consultancy Services",
-    "INFY"       to "Infosys",
-    "HDFCBANK"   to "HDFC Bank",
-    "ICICIBANK"  to "ICICI Bank",
-    "SBIN"       to "State Bank of India",
-    "BHARTIARTL" to "Bharti Airtel",
-    "WIPRO"      to "Wipro",
-    "LT"         to "Larsen and Toubro",
-    "AXISBANK"   to "Axis Bank",
-    "KOTAKBANK"  to "Kotak Mahindra Bank",
-    "HINDUNILVR" to "Hindustan Unilever",
-    "ITC"        to "ITC Limited",
-    "SUNPHARMA"  to "Sun Pharmaceutical",
-    "MARUTI"     to "Maruti Suzuki",
-    "BAJFINANCE" to "Bajaj Finance",
-    "TITAN"      to "Titan Company",
-    "ASIANPAINT" to "Asian Paints",
-    "NESTLEIND"  to "Nestle India",
-    "PNB"        to "Punjab National Bank",
-    "ADANIENT"   to "Adani Enterprises",
-    "ADANIPORTS" to "Adani Ports",
-    "POWERGRID"  to "Power Grid Corporation",
-    "NTPC"       to "NTPC Limited",
-    "ONGC"       to "Oil and Natural Gas",
-    "COALINDIA"  to "Coal India",
-    "BPCL"       to "Bharat Petroleum",
-    "HCLTECH"    to "HCL Technologies",
-    "TECHM"      to "Tech Mahindra",
-    "DRREDDY"    to "Dr Reddy Laboratories",
-    "CIPLA"      to "Cipla",
-    "BAJAJFINSV" to "Bajaj Finserv",
-    "TATAMOTORS" to "Tata Motors",
-    "TATASTEEL"  to "Tata Steel",
-    "JSWSTEEL"   to "JSW Steel",
-    "HINDALCO"   to "Hindalco Industries",
-    "ULTRACEMCO" to "UltraTech Cement",
-    "EICHERMOT"  to "Eicher Motors",
-    "HEROMOTOCO" to "Hero MotoCorp",
-    "ZOMATO"     to "Zomato",
-    "IRCTC"      to "Indian Railway Catering",
-    "TATAPOWER"  to "Tata Power",
-    "HAL"        to "Hindustan Aeronautics",
-    "BEL"        to "Bharat Electronics",
-)

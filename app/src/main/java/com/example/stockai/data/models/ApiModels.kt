@@ -112,3 +112,23 @@ data class PricePoint(
     @SerializedName("close")  val close: Double,
     @SerializedName("volume") val volume: Long
 )
+
+data class HorizonPredictionResponse(
+    @SerializedName("ticker")         val ticker:       String,
+    @SerializedName("strategy")       val strategy:     String,
+    @SerializedName("days")           val days:         Int,
+    @SerializedName("current_price")  val currentPrice: Double,
+    @SerializedName("target_price")   val targetPrice:  Double,
+    @SerializedName("stop_loss")      val stopLoss:     Double,
+    @SerializedName("upside_pct")     val upsidePct:    Double,
+    @SerializedName("downside_pct")   val downsidePct:  Double,
+    @SerializedName("confidence")     val confidence:   Int,
+    @SerializedName("signal")         val signal:       String,
+    @SerializedName("entry_date")     val entryDate:    String,
+    @SerializedName("notify_date")    val notifyDate:   String,
+    @SerializedName("notify_date_ts") val notifyDateTs: String,
+    @SerializedName("target_date")    val targetDate:   String,
+    @SerializedName("horizon_type")   val horizonType:  String,
+    @SerializedName("reasoning")      val reasoning:    List<String>,
+    @SerializedName("risk_level")     val riskLevel:    String
+)
